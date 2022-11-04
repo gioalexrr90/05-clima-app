@@ -1,18 +1,39 @@
 import axios from "axios";
+import fs from 'fs';
 
 class Busquedas {
 
     historial = [];
+    dbPath = './db/database.json';
 
     constructor () {
-        // TODO: Leer DB si existe
+        this.leerDB();
+    }
+
+    get historialCapitalizado() {
+        return this.historial.map( lugar => {
+
+            let palabras = lugar.split(' ');
+            palabras = palabras.map( p => p[0].toUpperCase() + p.substring(1) );
+
+            return palabras.join(' ')
+
+        })
     }
 
     get paramsMapbox(){
         return {
-            'access_token': 'pk.eyJ1IjoiZ2lvYWxleHJyOTAiLCJhIjoiY2w5empuOTN5MGE4aTN2b2RsNmV4Yjk2ayJ9.tQUR1sstdWcip0qDoBq6_g',
+            'access_token': process.env.MAPBOX_KEY,
             'limit': 5,
             'language': 'es'
+        }
+    }
+
+    get paramsOpenWeather(){
+        return {
+            'appid': process.env.OPENWEATHER_KEY,
+            'units': 'metric',
+            'lang': 'es'
         }
     }
 
@@ -24,9 +45,70 @@ class Busquedas {
         });
 
         const respuesta = await instance.get();
-        console.log(respuesta.data);
+        //console.log(respuesta.data.features);
 
-        return []; //Retornar los lugares a buscar
+        return respuesta.data.features.map( lugar => ({
+            id: lugar.id,
+            nombre: lugar.place_name,
+            lng: lugar.center[0],
+            lat: lugar.center[1]
+        })); //Retornar los lugares a buscar
+    }
+
+    async climaLugar( lat, lon ){
+        try {
+            const instance = await axios.create({
+                baseURL: `https://api.openweathermap.org/data/2.5/weather`,
+                params: { ...this.paramsOpenWeather, lat, lon }
+            });
+
+            const respuesta = await instance.get();
+            const { weather, main } = respuesta.data;
+
+            return {
+                desc: weather[0].description,
+                temp: main.temp,
+                max: main.temp_max,
+                min: main.temp_min
+            };
+
+        } catch (error) {
+            console.log(error);
+        }
+    }
+
+    agregarHistorial( lugar = '' ){
+
+        if ( this.historial.includes( lugar.toLocaleLowerCase() ) ){
+            return;
+        }
+
+        this.historial = this.historial.splice(0,5);
+
+        this.historial.unshift( lugar.toLocaleLowerCase() );
+
+        // Guardar en DB
+        this.guardarDB();
+    }
+
+    guardarDB(){
+
+        const payload = {
+            historial: this.historial
+        };
+
+        fs.writeFileSync(this.dbPath, JSON.stringify( payload ) );
+    }
+
+    leerDB(){
+        if ( !fs.existsSync(this.dbPath) ){
+            return null;
+        }
+
+        const info = fs.readFileSync( this.dbPath, { encoding: 'utf-8' } );
+        const data = JSON.parse( info );
+
+        this.historial = data.historial;
     }
 }
 
